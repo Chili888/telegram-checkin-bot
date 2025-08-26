@@ -1,11 +1,23 @@
-# Telegram Group Check-in Bot PRO — Custom Keyword Triggers
+# Telegram Group Check-in Bot PRO（中文关键词触发版）
 
-特性：
-- 自定义关键词触发 `/addtrigger 关键词 动作`
-- 查看触发词 `/listtriggers`
-- 删除触发词 `/deltrigger 关键词`
-- 动作可选：`checkin`、`smoke_start`、`smoke_stop`、`toilet_start`、`toilet_stop`
-- 支持中/英/越命令与回复，Webhook/轮询皆可
-- 多群可用，触发词按群隔离存储（SQLite）
+功能：
+- ✅ 多语言支持（中/英/越）
+- ✅ 群组专属时区
+- ✅ 自定义工作时间
+- ✅ 吸烟/如厕休息，超时 2 分钟提醒
+- ✅ 自定义日报时间
+- ✅ 每日自动统计报表
+- ✅ 中文关键词触发（需在 @BotFather `/setprivacy` → Disable）
 
-使用前在 @BotFather 里：`/setprivacy` → 选择 **Disable**，让机器人能读取群聊文本
+## 中文关键词触发
+- 打卡/签到 → `/checkin`
+- 排行/排行榜/榜单（可加“30天/全部”）→ `/leaderboard`
+- 统计/我的统计 → `/stats`
+- 开始吸烟/抽烟/吸烟 → `/smoke start`
+- 结束吸烟/停止吸烟 → `/smoke stop`
+- 上厕所/如厕/厕所/卫生间/洗手间 → `/toilet start`
+- 如厕结束/厕所结束 → `/toilet stop`
+- 设置时区 Asia/Phnom_Penh → `/settz`
+- 设置工作时间 09:00-18:00 → `/workhours 09:00-18:00`
+- 设置日报 18:00 → `/setreport 18:00`
+- 导出/导出CSV/导出表 → `/export`（管理员）
