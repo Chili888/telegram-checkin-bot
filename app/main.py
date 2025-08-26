@@ -53,7 +53,6 @@ def kbd_checkin(lang):
 def reply_kbd_cn():
     rows = [
         [KeyboardButton("上班打卡"), KeyboardButton("下班打卡")],
-        [KeyboardButton("抽烟"), KeyboardButton("抽完了")],
         [KeyboardButton("上厕所"), KeyboardButton("拉完了")],
     ]
     return ReplyKeyboardMarkup(rows, resize_keyboard=True)
@@ -321,9 +320,9 @@ async def keyword_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await checkin_cmd(update, context); return
 
     # 休息
-    if any(w in text_raw for w in ["结束吸烟", "停止吸烟", "抽烟结束", "cy0"]) or "smoke stop" in text:
+    if any(w in text_raw for w in ["结束吸烟", "抽完了", "抽烟结束", "cy0"]) or "smoke stop" in text:
         await _stop_break(update, context, "smoke"); return
-    if any(w in text_raw for w in ["结束厕所", "厕所结束", "如厕结束", "停止如厕", "wc0"]) or "toilet stop" in text:
+    if any(w in text_raw for w in ["结束厕所", "拉完了", "如厕结束", "停止如厕", "wc0"]) or "toilet stop" in text:
         await _stop_break(update, context, "toilet"); return
     if any(w in text_raw for w in ["抽烟", "吸烟", "cy"]) or "smoke" in text:
         await _start_break(update, context, "smoke"); return
