@@ -53,8 +53,8 @@ def kbd_checkin(lang):
 def reply_kbd_cn():
     rows = [
         [KeyboardButton("上班打卡"), KeyboardButton("下班打卡")],
-        [KeyboardButton("抽烟"), KeyboardButton("结束抽烟")],
-        [KeyboardButton("上厕所"), KeyboardButton("结束厕所")],
+        [KeyboardButton("抽烟"), KeyboardButton("抽完了")],
+        [KeyboardButton("上厕所"), KeyboardButton("拉完了")],
     ]
     return ReplyKeyboardMarkup(rows, resize_keyboard=True)
 
