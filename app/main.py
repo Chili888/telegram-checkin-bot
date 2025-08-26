@@ -42,7 +42,7 @@ REMIND_BEFORE_MIN = 5
 
 SMOKE_LIMIT_MIN = 10
 SMOKE_MAX_PER_DAY = 10
-TOILET_LIMIT_MIN = 20
+TOILET_LIMIT_MIN = 15
 TOILET_MAX_PER_DAY = 5
 TAKEOUT_LIMIT_MIN = 15
 TAKEOUT_MAX_PER_DAY = 3
@@ -63,7 +63,7 @@ def reply_kbd_cn():
 WELCOME_TEXT = (
     "✅ 欢迎加入！今天也要把事情做好，赚大钱 💰！\n\n"
     "功能清单：\n"
-    "✅ 🚽 如厕限制（20 分钟/天 5 次/超时罚站 5 分钟）\n"
+    "✅ 🚽 如厕限制（15 分钟/天 5 次/超时罚站 5 分钟）\n"
     "✅ 🥡 取外卖（15 分钟/天 3 次/超时罚站 5 分钟）\n"
     "✅ 📈 下班日报 + 周总结\n\n"
     "上下班打卡、上厕所、取外卖，都需要打卡。"
