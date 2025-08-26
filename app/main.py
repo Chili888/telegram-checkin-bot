@@ -44,6 +44,8 @@ SMOKE_LIMIT_MIN = 10
 SMOKE_MAX_PER_DAY = 10
 TOILET_LIMIT_MIN = 20
 TOILET_MAX_PER_DAY = 5
+TAKEOUT_LIMIT_MIN = 15
+TAKEOUT_MAX_PER_DAY = 3
 PENALTY_MIN = 5
 
 # ===== UI =====
@@ -63,8 +65,9 @@ WELCOME_TEXT = (
     "功能清单：\n"
     "✅ 🚬 吸烟限制（10 分钟/天 10 次/超时罚站 5 分钟）\n"
     "✅ 🚽 如厕限制（20 分钟/天 5 次/超时罚站 5 分钟）\n"
+    "✅ 🥡 取外卖（15 分钟/天 3 次/超时罚站 5 分钟）\n"
     "✅ 📈 下班日报 + 周总结\n\n"
-    "中文关键词：上班打卡/下班打卡、抽烟=cy/结束抽烟=cy0、厕所=wc/结束厕所=wc0、排行榜/统计/帮助\n"
+    "上下班打卡、上厕所、取外卖，都需要打卡。"
 )
 
 def greeting_text():
@@ -72,7 +75,7 @@ def greeting_text():
         "⏰ 早上好！今天继续努力工作，冲业绩、赚大钱！💸\n\n"
         "快捷操作：\n"
         "• 发送「上班打卡/下班打卡/打卡」\n"
-        "• 发送「抽烟/结束抽烟」「上厕所/结束厕所」\n"
+        "• 发送「抽烟/结束吸烟」「上厕所/拉完了」「取外卖/回座」\n"
         "• 上下班前 5 分钟自动提醒打卡\n"
     )
 
@@ -265,6 +268,7 @@ async def _start_break(update: Update, context: ContextTypes.DEFAULT_TYPE, kind:
     chat = update.effective_chat; user = update.effective_user
     now_ts = int(datetime.now(timezone.utc).timestamp())
     day_start, day_end = await _day_bounds_et()
+    # 每日上限（含吸烟/如厕；取外卖单独用 _start_takeout）
     max_per_day = SMOKE_MAX_PER_DAY if kind == "smoke" else TOILET_MAX_PER_DAY
     cnt = await storage.count_breaks_between(chat.id, user.id, kind, day_start, day_end)
     if cnt >= max_per_day:
@@ -293,12 +297,72 @@ async def _stop_break(update: Update, context: ContextTypes.DEFAULT_TYPE, kind: 
                                    when=datetime.now(timezone.utc) + timedelta(minutes=PENALTY_MIN))
     await update.message.reply_text(txt)
 
+# ===== 取外卖 / 回座 =====
+async def _start_takeout(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    kind = "takeout"
+    chat = update.effective_chat
+    user = update.effective_user
+    now_ts = int(datetime.now(timezone.utc).timestamp())
+
+    day_start, day_end = await _day_bounds_et()
+    cnt = await storage.count_breaks_between(chat.id, user.id, kind, day_start, day_end)
+    if cnt >= TAKEOUT_MAX_PER_DAY:
+        await update.message.reply_text(f"⚠️ 今日取外卖次数已达上限（{TAKEOUT_MAX_PER_DAY} 次）")
+        return
+
+    if await storage.has_active_break(chat.id, user.id, kind):
+        await update.message.reply_text("已在取外卖中，先『回座』再开始")
+        return
+
+    await storage.start_break(chat.id, user.id, kind, now_ts)
+    await update.message.reply_text("⏱️ 开始取外卖（计时已启动）")
+
+    context.job_queue.run_once(
+        break_limit_job,
+        when=datetime.now(timezone.utc) + timedelta(minutes=TAKEOUT_LIMIT_MIN),
+        chat_id=chat.id,
+        name=f"limit-{kind}-{chat.id}-{user.id}",
+        data={"chat_id": chat.id, "user_id": user.id, "kind": kind, "limit_min": TAKEOUT_LIMIT_MIN},
+    )
+
+async def back_to_seat_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat = update.effective_chat
+    user = update.effective_user
+    now_ts = int(datetime.now(timezone.utc).timestamp())
+
+    KINDS  = ["smoke", "toilet", "takeout"]
+    LIMITS = {"smoke": SMOKE_LIMIT_MIN, "toilet": TOILET_LIMIT_MIN, "takeout": TAKEOUT_LIMIT_MIN}
+    NAMES  = {"smoke": "吸烟", "toilet": "如厕", "takeout": "取外卖"}
+
+    for kind in KINDS:
+        if await storage.has_active_break(chat.id, user.id, kind):
+            mins = await storage.stop_break(chat.id, user.id, kind, now_ts)
+            if mins is None:
+                break
+            limit = LIMITS[kind]
+            name  = NAMES[kind]
+            txt = f"✅ 结束{name}，持续 {mins} 分钟"
+            if mins > limit:
+                txt += f"（已超过 {limit} 分钟，罚站 {PENALTY_MIN} 分钟）"
+                await update.message.reply_text(f"🚫 现在开始罚站 {PENALTY_MIN} 分钟")
+                context.job_queue.run_once(
+                    lambda c: c.bot.send_message(chat.id, "⏳ 罚站结束，注意专注工作！"),
+                    when=datetime.now(timezone.utc) + timedelta(minutes=PENALTY_MIN)
+                )
+            await update.message.reply_text(txt)
+            return
+
+    await update.message.reply_text("当前没有正在进行的休息")
+
 async def break_limit_job(context: ContextTypes.DEFAULT_TYPE):
     d = context.job.data
     if await storage.has_active_break(d["chat_id"], d["user_id"], d["kind"]):
-        kind_cn = "吸烟" if d["kind"]=="smoke" else "如厕"
-        await context.bot.send_message(chat_id=d["chat_id"],
-            text=f"⏰ {kind_cn}已超过 {d['limit_min']} 分钟，请尽快结束！超时将罚站 {PENALTY_MIN} 分钟")
+        name_map = {"smoke": "吸烟", "toilet": "如厕", "takeout": "取外卖"}
+        kind_cn = name_map.get(d["kind"], d["kind"])
+        await context.bot.send_message(
+            chat_id=d["chat_id"],
+            text=f"⏰ {kind_cn}已超过 {d['limit_min']} 分钟，请尽快结束！超时将罚站 {PENALTY_MIN} 分钟",
+        )
 
 # ===== 关键词触发 =====
 def _set_args(context, args_list):
@@ -320,27 +384,30 @@ async def keyword_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if any(w in text_raw for w in ["打卡", "签到"]) or any(w in text for w in ["check in", "checkin"]):
         await checkin_cmd(update, context); return
 
-    # 休息
+    # 结束吸烟 / 结束厕所
     if any(w in text_raw for w in ["结束吸烟", "抽完了", "抽烟结束", "cy0"]) or "smoke stop" in text:
         await _stop_break(update, context, "smoke"); return
     if any(w in text_raw for w in ["结束厕所", "拉完了", "如厕结束", "停止如厕", "wc0"]) or "toilet stop" in text:
         await _stop_break(update, context, "toilet"); return
-    if any(w in text_raw for w in ["回座"]) or "Recline seat" in text:
-        await _stop_break(update, context, "Take out food"); return
+
+    # 回座（结束任意休息）
+    if any(w in text_raw for w in ["回座", "回到座位", "回工位", "我回来了"]):
+        await back_to_seat_cmd(update, context); return
+
+    # 开始吸烟 / 厕所 / 取外卖
     if any(w in text_raw for w in ["抽烟", "吸烟", "cy"]) or "smoke" in text:
         await _start_break(update, context, "smoke"); return
-    if any(w in text_raw for w in ["上厕所", "厕所", "如厕", "卫生间", "洗手间", "wc"]) or "toilet" in text or "wc" in text:
+    if any(w in text_raw for w in ["上厕所", "厕所", "如厕", "卫生间", "洗手间", "wc"]) or "toilet" in text:
         await _start_break(update, context, "toilet"); return
-    if any(w in text_raw for w in ["取外卖"]) or "Take out food" in text:
-        await _start_break(update, context, "Take out food"); return
+    if any(w in text_raw for w in ["取外卖", "拿外卖", "取餐", "拿餐"]):
+        await _start_takeout(update, context); return
 
-    # 排行/统计/帮助
+    # 排行/统计/帮助（占位）
     if any(w in text_raw for w in ["排行榜","排行","榜单"]) or "leaderboard" in text:
         m = re.search(r"(\d{1,3})\s*天", text_raw)
         if "全部" in text_raw or "all" in text: _set_args(context, ["all"])
         elif m: _set_args(context, [m.group(1)])
         else: _set_args(context, [])
-        # 这里可以接 leaderboard_cmd（留空位）
         await update.message.reply_text("📊 排行榜功能（可接入存储）"); return
 
     if any(w in text_raw for w in ["统计","我的统计","个人统计"]) or "stats" in text:
@@ -386,9 +453,11 @@ async def main_async():
         ("workin", "上班打卡"),
         ("workout", "下班打卡"),
         ("smoke_start", "抽烟"),
-        ("smoke_stop", "抽完了"),
+        ("smoke_stop", "结束吸烟"),
         ("toilet_start", "上厕所"),
         ("toilet_stop", "拉完了"),
+        ("takeout", "取外卖"),
+        ("back_to_seat", "回座"),
     ])
 
     # handlers
@@ -399,6 +468,8 @@ async def main_async():
     app.add_handler(CommandHandler("smoke_stop",  lambda u,c: _stop_break(u,c,"smoke")))
     app.add_handler(CommandHandler("toilet_start", lambda u,c: _start_break(u,c,"toilet")))
     app.add_handler(CommandHandler("toilet_stop",  lambda u,c: _stop_break(u,c,"toilet")))
+    app.add_handler(CommandHandler("takeout", _start_takeout))
+    app.add_handler(CommandHandler("back_to_seat", back_to_seat_cmd))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, keyword_handler))
     app.add_handler(CallbackQueryHandler(on_button))
 
