@@ -54,6 +54,7 @@ def reply_kbd_cn():
     rows = [
         [KeyboardButton("上班打卡"), KeyboardButton("下班打卡")],
         [KeyboardButton("上厕所"), KeyboardButton("拉完了")],
+        [KeyboardButton("取外卖"), KeyboardButton("回座")],
     ]
     return ReplyKeyboardMarkup(rows, resize_keyboard=True)
 
@@ -324,10 +325,14 @@ async def keyword_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _stop_break(update, context, "smoke"); return
     if any(w in text_raw for w in ["结束厕所", "拉完了", "如厕结束", "停止如厕", "wc0"]) or "toilet stop" in text:
         await _stop_break(update, context, "toilet"); return
+    if any(w in text_raw for w in ["回座"]) or "Recline seat" in text:
+        await _stop_break(update, context, "Take out food"); return
     if any(w in text_raw for w in ["抽烟", "吸烟", "cy"]) or "smoke" in text:
         await _start_break(update, context, "smoke"); return
     if any(w in text_raw for w in ["上厕所", "厕所", "如厕", "卫生间", "洗手间", "wc"]) or "toilet" in text or "wc" in text:
         await _start_break(update, context, "toilet"); return
+    if any(w in text_raw for w in ["取外卖"]) or "Take out food" in text:
+        await _start_break(update, context, "Take out food"); return
 
     # 排行/统计/帮助
     if any(w in text_raw for w in ["排行榜","排行","榜单"]) or "leaderboard" in text:
@@ -381,9 +386,9 @@ async def main_async():
         ("workin", "上班打卡"),
         ("workout", "下班打卡"),
         ("smoke_start", "抽烟"),
-        ("smoke_stop", "结束抽烟"),
+        ("smoke_stop", "抽完了"),
         ("toilet_start", "上厕所"),
-        ("toilet_stop", "结束厕所"),
+        ("toilet_stop", "拉完了"),
     ])
 
     # handlers
