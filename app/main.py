@@ -76,8 +76,7 @@ WELCOME_TEXT = (
     "✅ 🚽 如厕休息限制（⏱️ 超时20分钟提醒）\n"
     "✅ 📊 自定义报告时间\n"
     "✅ 📈 每日自动统计报表\n\n"
-    "中文关键词：打卡/签到、抽烟/吸烟、厕所/如厕/卫生间、排行榜/统计、设置时区/工作时间/日报、导出CSV\n"
-    "（注意：请在 @BotFather 关闭隐私 `/setprivacy → Disable` 才能识别普通文本）"
+    "中文关键词：打卡/签到、抽烟/吸烟/cy、厕所/如厕/卫生间/wc、结束/cy0/wc0、排行榜/统计、设置时区/工作时间/日报、导出CSV\n"
 )
 
 def greeting_text():
@@ -243,13 +242,13 @@ async def keyword_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await checkin_cmd(update, context); return
 
     # 休息：先 stop 再 start
-    if any(w in text_raw for w in ["结束吸烟", "停止吸烟", "抽烟结束"]) or "smoke stop" in text:
+    if any(w in text_raw for w in ["结束吸烟", "停止吸烟", "抽烟结束", "cy0"]) or "smoke stop" in text:
         await _stop_break(update, context, "smoke"); return
-    if any(w in text_raw for w in ["结束如厕", "厕所结束", "如厕结束"]) or "toilet stop" in text:
+    if any(w in text_raw for w in ["结束如厕", "厕所结束", "如厕结束", "wc0"]) or "toilet stop" in text:
         await _stop_break(update, context, "toilet"); return
-    if any(w in text_raw for w in ["抽烟", "吸烟"]) or "smoke" in text:
+    if any(w in text_raw for w in ["抽烟", "吸烟", "cy"]) or "smoke" in text:
         await _start_break(update, context, "smoke"); return
-    if any(w in text_raw for w in ["上厕所", "厕所", "如厕", "卫生间", "洗手间"]) or "toilet" in text or "wc" in text:
+    if any(w in text_raw for w in ["上厕所", "厕所", "如厕", "卫生间", "洗手间", "wc"]) or "toilet" in text or "wc" in text:
         await _start_break(update, context, "toilet"); return
 
     # 排行榜
