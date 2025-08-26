@@ -1,4 +1,4 @@
-python-telegram-bot[job-queue]==21.4
+python-telegram-bot[job-queue,rate-limiter]==21.4
 fastapi==0.112.2
 uvicorn==0.30.6
 aiosqlite==0.20.0
