@@ -205,32 +205,42 @@ async def _sum_break_minutes(db: aiosqlite.Connection, chat_id: int, kind: str, 
 
 async def summarize_between(chat_id: int, start_ts: int, end_ts: int) -> Tuple[int, int, int, int, int, List[Tuple[str,int]]]:
     """
-    返回：
-      c              -> 区间内打卡人数（distinct user_id, from checkins）
-      s_cnt, s_min   -> 吸烟次数 & 分钟
-      t_cnt, t_min   -> 如厕次数 & 分钟
-      top            -> 按打卡次数 Top5: [(name, cnt), ...]
+    基于上班记录的汇总：
+      c              -> 区间内有上班记录的“人数”（distinct user_id，按与区间有交集的 work_sessions 计算）
+      s_cnt, s_min   -> 吸烟次数 & 分钟（与原来一致）
+      t_cnt, t_min   -> 如厕次数 & 分钟（与原来一致）
+      top            -> Top5：按“本区间内开始的上班次数”排序 [(name, cnt), ...]
     """
     async with aiosqlite.connect(DB_PATH) as db:
-        # 打卡人数 & Top
+        # 人数：与区间有交集的 work_sessions 的去重 user
         async with db.execute(
-            "SELECT COUNT(DISTINCT user_id) FROM checkins WHERE chat_id=? AND ts BETWEEN ? AND ?",
-            (chat_id, start_ts, end_ts),
+            "SELECT COUNT(DISTINCT user_id) FROM work_sessions "
+            "WHERE chat_id=? AND NOT (COALESCE(end_ts, ?) < ? OR start_ts > ?)",
+            (chat_id, end_ts, start_ts, end_ts),
         ) as cur:
             rc = await cur.fetchone()
             c = int(rc[0] if rc else 0)
 
+        # Top：按“在本区间内开始的上班次数”统计
         top: List[Tuple[str,int]] = []
         async with db.execute(
-            "SELECT COALESCE(display_name, username, CAST(user_id AS TEXT)) AS name, COUNT(*) AS cnt "
-            "FROM checkins WHERE chat_id=? AND ts BETWEEN ? AND ? "
-            "GROUP BY user_id ORDER BY cnt DESC, name ASC LIMIT 5",
+            "SELECT user_id, COUNT(*) AS cnt FROM work_sessions "
+            "WHERE chat_id=? AND start_ts BETWEEN ? AND ? "
+            "GROUP BY user_id ORDER BY cnt DESC LIMIT 5",
             (chat_id, start_ts, end_ts),
         ) as cur:
-            async for name, cnt in cur:
-                top.append((name or "", int(cnt)))
+            async for uid, cnt in cur:
+                # 尝试用最近一次名字（来自 checkins 兜底，不影响主逻辑）
+                async with db.execute(
+                    "SELECT COALESCE(display_name, username, CAST(user_id AS TEXT)) "
+                    "FROM checkins WHERE chat_id=? AND user_id=? ORDER BY ts DESC LIMIT 1",
+                    (chat_id, uid),
+                ) as c2:
+                    r = await c2.fetchone()
+                    name = r[0] if r and r[0] else str(uid)
+                top.append((name, int(cnt)))
 
-        # 休息分钟/次数
+        # 休息分钟/次数（保持不变）
         s_cnt, s_min = await _sum_break_minutes(db, chat_id, "smoke", start_ts, end_ts)
         t_cnt, t_min = await _sum_break_minutes(db, chat_id, "toilet", start_ts, end_ts)
 
