@@ -112,6 +112,62 @@ def _next_daily_time(hh: int, mm: int, tz: pytz.BaseTzInfo) -> datetime:
         target = target + timedelta(days=1)
     return target.astimezone(timezone.utc)
 
+async def _reschedule_active_breaks(app: Application):
+    """
+    开机/重启后恢复所有进行中的休息的超时提醒：
+    - 未到上限：按剩余时间补一个 run_once
+    - 已超时：立即发送一次超时提醒
+    """
+    from .storage import aiosqlite, DB_PATH  # 复用现有存储
+
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute(
+                "SELECT chat_id, user_id, kind, start_ts FROM breaks WHERE end_ts IS NULL"
+            ) as cur:
+                rows = await cur.fetchall()
+    except Exception as e:
+        logging.error(f"resume breaks read error: {e}")
+        return
+
+    if not rows:
+        return
+
+    # 上限表
+    LIMITS = {"smoke": SMOKE_LIMIT_MIN, "toilet": TOILET_LIMIT_MIN, "takeout": TAKEOUT_LIMIT_MIN}
+    name_map = {"smoke": "吸烟", "toilet": "如厕", "takeout": "取外卖"}
+
+    now_utc = datetime.now(timezone.utc)
+
+    for chat_id, user_id, kind, start_ts in rows:
+        limit_min = LIMITS.get(kind, 15)
+        passed = (int(now_utc.timestamp()) - int(start_ts)) // 60
+        if passed >= limit_min:
+            # 已超时：补发一次提醒
+            try:
+                mention = f'<a href="tg://user?id={user_id}">请尽快回座</a>'
+                await app.bot.send_message(
+                    chat_id=chat_id,
+                    text=f"⏰ {name_map.get(kind, kind)}已超过 {limit_min} 分钟，{mention}。超时将记录处罚。",
+                    parse_mode="HTML",
+                )
+            except Exception as e:
+                logging.warning(f"resume overdue notify fail: {e}")
+        else:
+            # 未超时：补一条剩余时间的 run_once
+            remaining = limit_min - passed
+            try:
+                app.job_queue.run_once(
+                    break_limit_job,
+                    when=now_utc + timedelta(minutes=remaining),
+                    chat_id=chat_id,
+                    name=f"limit-{kind}-{chat_id}-{user_id}",
+                    data={"chat_id": chat_id, "user_id": user_id, "kind": kind, "limit_min": limit_min},
+                )
+            except Exception as e:
+                logging.warning(f"resume schedule fail: {e}")
+
+
 # ===== 计划任务 =====
 async def daily_greeting_job(context: ContextTypes.DEFAULT_TYPE):
     chat_id = context.job.data["chat_id"]
@@ -551,10 +607,11 @@ async def main_async():
     app.add_error_handler(error_handler)
 
     if ENABLE_POLLING:
-        await app.start(); await app.updater.start_polling(); await app.updater.idle()
+        await app.start(); await _reschedule_active_breaks(app); await app.updater.start_polling(); await app.updater.idle()
     else:
         await app.bot.set_webhook(url=f"{BASE_URL}/webhook/{WEBHOOK_SECRET}")
         await app.start()
+        await _reschedule_active_breaks(app)
         server = uvicorn.Server(uvicorn.Config(app_fastapi, host="0.0.0.0", port=PORT))
         await server.serve()
 
