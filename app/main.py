@@ -78,7 +78,7 @@ WELCOME_TEXT = (
 def greeting_text():
     return (
         "⏰ 早上好！今天继续努力工作，冲业绩、赚大钱！💸\n"
-        "记得在 08:50–09:00 打卡哦～\n"
+        "记得在 09:00 前打卡哦～\n"
         "快捷：上班打卡/下班打卡、上厕所/拉完了、取外卖/回座。"
     )
 
@@ -104,6 +104,14 @@ def _today_window_et():
     now_et = datetime.now(TZ_ET)
     return _et_day_bounds(now_et)
 
+def _next_daily_time(hh: int, mm: int, tz: pytz.BaseTzInfo) -> datetime:
+    """返回下一次在 tz 时区的 hh:mm（今天未过则今天；否则明天），UTC 时间戳"""
+    now_local = datetime.now(tz)
+    target = tz.localize(datetime(now_local.year, now_local.month, now_local.day, hh, mm, 0))
+    if target <= now_local:
+        target = target + timedelta(days=1)
+    return target.astimezone(timezone.utc)
+
 # ===== 计划任务 =====
 async def daily_greeting_job(context: ContextTypes.DEFAULT_TYPE):
     chat_id = context.job.data["chat_id"]
@@ -115,7 +123,7 @@ async def work_reminder_job(context: ContextTypes.DEFAULT_TYPE):
     when = f"{h:02d}:{m:02d} ET"
     encourage = "今天冲一冲，目标翻倍！💪"
     if kind == "start":
-        txt = f"⏰ {when} 即将上班（还有 {REMIND_BEFORE_MIN} 分钟）— 记得 08:50–09:00 打卡！{encourage}"
+        txt = f"⏰ {when} 即将上班（还有 {REMIND_BEFORE_MIN} 分钟）— 记得 09:00 前打卡！{encourage}"
     else:
         txt = f"⏰ {when} 即将下班（还有 {REMIND_BEFORE_MIN} 分钟）— 记得收尾并『下班打卡』！{encourage}"
     await context.bot.send_message(chat_id=chat_id, text=txt)
@@ -236,9 +244,14 @@ async def schedule_chat_jobs(app: Application, chat_id: int):
             j.schedule_removal()
 
     # 早安
-    first = _next_weekly_occurrence(datetime.now(TZ_ET).weekday(), DAILY_GREETING_ET.hour, DAILY_GREETING_ET.minute, TZ_ET)
-    app.job_queue.run_repeating(daily_greeting_job, interval=24*3600, first=first,
-                                name=f"greet-{chat_id}-daily", data={"chat_id": chat_id})
+    first = _next_daily_time(DAILY_GREETING_ET.hour, DAILY_GREETING_ET.minute, TZ_ET)
+    app.job_queue.run_repeating(
+        daily_greeting_job,
+        interval=24*3600,
+        first=first,
+        name=f"greet-{chat_id}-daily",
+        data={"chat_id": chat_id},
+   ) 
 
     # 周一~周五：上/下班提醒 + 下班前3分钟快照 + 下班日报
     for wd, (sh, sm, eh, em) in WORK_SCHEDULE.items():
@@ -301,17 +314,13 @@ async def workin_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚠️ 今天已经上过班啦（每天仅允许一次上班打卡）", reply_markup=reply_kbd_cn())
         return
 
-    # 时间窗判断（Mon–Fri 08:50–09:00 正常；>09:00 迟到；周末无限制）
+    # 时间窗判断（Mon–Fri 09:00之前正常；>09:00 迟到；周末无限制）
     now_et = datetime.now(TZ_ET)
     wd = now_et.weekday()
     is_weekend = wd >= 5
     late = False
     if not is_weekend:
-        win_start = now_et.replace(hour=8, minute=50, second=0, microsecond=0)
         win_end   = now_et.replace(hour=9, minute=0,  second=0, microsecond=0)
-        if now_et < win_start:
-            await update.message.reply_text("⏳ 时间过早，请在 08:50–09:00 再来打卡～", reply_markup=reply_kbd_cn())
-            return
         if now_et > win_end:
             late = True
 
@@ -458,10 +467,6 @@ async def keyword_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await workin_cmd(update, context); return
     if text_raw in ["下班打卡","下班","下班了","收工"]:
         await workout_cmd(update, context); return
-
-    # 打卡
-    if any(w in text_raw for w in ["打卡", "签到"]) or any(w in text for w in ["check in", "checkin"]):
-        await checkin_cmd(update, context); return
 
     # 结束休息
     if any(w in text_raw for w in ["结束吸烟", "抽完了", "抽烟结束", "cy0"]) or "smoke stop" in text:
