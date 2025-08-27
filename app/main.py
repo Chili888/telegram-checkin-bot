@@ -67,7 +67,7 @@ WELCOME_TEXT = (
     "✅ 欢迎你集团的销冠！核心的力量!💰💰💰\n\n"
     "👊定好自己的目标为之努力，抛弃乱七八糟的想法。\n"
     "🤙从最底层数据开盘，回复客户，热聊客户，意向客户，入金客户。\n"
-    "🫵人生，没有弯路，也没有捷径，只有自己该走的路。\n"
+    "🫵人生，没有弯路，也没有捷径，只有自己该走的路。\n\n"
     "员工须知‼️：\n"
     "• 周一~周五 上班打卡时间窗：ET 08:50–09:00；09:00 后打卡视为【迟到】\n"
     "• 周六/周日不固定，以实际打卡为准。\n"
@@ -137,23 +137,20 @@ async def snapshot_job(context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_message(chat_id=chat_id, text=txt)
 
 async def send_daily_report(context: ContextTypes.DEFAULT_TYPE, chat_id: int, ref_et: datetime):
-    # 每人：上班时长（小时）、厕所次数、取外卖次数；优先私发群主
+    """
+    日报：按人统计
+    - 姓名：优先取群内的显示名（get_chat_member → user.full_name）
+    - 指标：上班时长(小时, 两位小数) / 厕所次数 / 取外卖次数
+    - 优先私发群主；私发失败则发回群里
+    """
+    # 统计区间（当天 ET）
     start_ts, end_ts, start_local, _ = _et_day_bounds(ref_et)
     rows = await storage.daily_person_summary(chat_id, start_ts, end_ts)
     if not rows:
         await context.bot.send_message(chat_id=chat_id, text="📈 今日无数据")
         return
 
-    # 组织成文本表格
-    lines = ["📈 今日统计报表（按人）", f"日期：{start_local.strftime('%Y-%m-%d')}（ET）", ""]
-    lines.append("姓名 | 上班时长(h) | 厕所 | 外卖")
-    lines.append("---|---:|---:|---:")
-    for r in rows:
-        h = round(r["work_min"]/60, 2)
-        lines.append(f"{r['name']} | {h:.2f} | {r['toilet_cnt']} | {r['takeout_cnt']}")
-    text = "\n".join(lines)
-
-    # 找群主
+    # 先拿群主（用于私发）
     owner_id = None
     try:
         admins = await context.bot.getChatAdministrators(chat_id)
@@ -164,16 +161,45 @@ async def send_daily_report(context: ContextTypes.DEFAULT_TYPE, chat_id: int, re
     except Exception as e:
         logging.warning(f"getChatAdministrators failed: {e}")
 
-    # 优先私发，不行就发群里
+    # 组装表格（姓名改为群内昵称）
+    lines = [
+        f"📈 今日统计报表（按人）",
+        f"日期：{start_local.strftime('%Y-%m-%d')}（ET）",
+        "",
+        "姓名 | 上班时长(h) | 厕所 | 外卖",
+        "---|---:|---:|---:",
+    ]
+
+    # 为了减少 API 压力，查不到就回退到存储里的 name
+    for r in rows:
+        # 获取群内显示名
+        try:
+            member = await context.bot.get_chat_member(chat_id, r["user_id"])
+            name = member.user.full_name or r["name"] or str(r["user_id"])
+        except Exception:
+            name = r["name"] or str(r["user_id"])
+
+        h = round(r["work_min"] / 60, 2)
+        lines.append(f"{name} | {h:.2f} | {r['toilet_cnt']} | {r['takeout_cnt']}")
+
+    text = "\n".join(lines)
+
+    # 发送（优先私发群主；失败则发群里）
+    async def _safe_send(uid: int, content: str) -> bool:
+        try:
+            await context.bot.send_message(uid, content)
+            return True
+        except Exception as e:
+            logging.warning(f"send_daily_report private fail -> {e}")
+            return False
+
     sent = False
     if owner_id:
-        try:
-            await context.bot.send_message(owner_id, text)
-            sent = True
-        except Exception:
-            sent = False
+        sent = await _safe_send(owner_id, text)
+
     if not sent:
         await context.bot.send_message(chat_id, text)
+
 
 async def weekly_report_job(context: ContextTypes.DEFAULT_TYPE):
     chat_id = context.job.data["chat_id"]
