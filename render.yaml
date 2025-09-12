@@ -1,10 +1,18 @@
 services:
   - type: web
-    name: telegram-gpt-bot
+    name: telegram-gpt5-bot
     env: python
-    region: oregon
     plan: free
-    rootDir: .                # 如果你的代码在子目录，改成子目录路径
-    buildCommand: pip install --no-cache-dir -r requirements.txt
+    buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
-    autoDeploy: true
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-5
+      - key: WEBHOOK_SECRET
+        value: dev-secret
+      - key: TIMEOUT_SEC
+        value: "60"
