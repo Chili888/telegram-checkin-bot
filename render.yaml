@@ -1,14 +1,10 @@
 services:
   - type: web
-    name: telegram-checkin-bot-pro
+    name: telegram-gpt-bot
     env: python
-    buildCommand: "pip install -r requirements.txt"
-    startCommand: "python -m app.main"
+    region: oregon
     plan: free
-    envVars:
-      - key: BOT_TOKEN
-        sync: false
-      - key: BASE_URL
-        sync: false
-      - key: WEBHOOK_SECRET
-        generateValue: true
+    rootDir: .                # 如果你的代码在子目录，改成子目录路径
+    buildCommand: pip install --no-cache-dir -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    autoDeploy: true
