@@ -1,18 +1,14 @@
 services:
   - type: web
-    name: telegram-gpt5-bot
+    name: telegram-checkin-bot-pro
     env: python
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python -m app.main"
     plan: free
-    buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: BOT_TOKEN
         sync: false
-      - key: OPENAI_API_KEY
+      - key: BASE_URL
         sync: false
-      - key: OPENAI_MODEL
-        value: gpt-5
       - key: WEBHOOK_SECRET
-        value: dev-secret
-      - key: TIMEOUT_SEC
-        value: "60"
+        generateValue: true
